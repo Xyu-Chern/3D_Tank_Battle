@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 坦克大战 (Boss战升级)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; font-family: 'Courier New', Courier, monospace; }
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            pointer-events: none;
+            text-shadow: 2px 2px 0 #000;
+        }
+        #score-board { font-size: 24px; font-weight: bold; }
+        #charge-bar-container {
+            margin-top: 10px;
+            width: 200px;
+            height: 10px;
+            background: #333;
+            border: 2px solid #fff;
+            display: none; 
+        }
+        #charge-bar {
+            width: 0%;
+            height: 100%;
+            background: #00ffff;
+            transition: width 0.1s;
+        }
+        #dash-status {
+            margin-top: 5px;
+            font-size: 14px;
+            color: #ffff00;
+            display: none;
+        }
+        #skill-status-display {
+            margin-top: 10px;
+            font-size: 16px;
+            color: #7f8c8d;
+        }
+        #boss-hp-bar {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            height: 25px;
+            background: #333;
+            border: 2px solid #fff;
+            display: none;
+            overflow: hidden;
+        }
+        #boss-hp-fill {
+            height: 100%;
+            width: 100%;
+            background-color: #e74c3c;
+            transition: width 0.3s;
+            line-height: 25px;
+            color: white;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        /* 通用遮罩层样式 */
+        .overlay-screen {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            text-align: center;
+            color: #fff;
+            border: 4px solid #fff;
+            z-index: 10;
+            max-width: 600px;
+            width: 80%;
+        }
+
+        h1 { margin-top: 0; color: #e74c3c; font-size: 48px; text-transform: uppercase; }
+        h2 { color: #3498db; margin-bottom: 20px; }
+        p { font-size: 18px; margin-bottom: 30px; line-height: 1.5; }
+        
+        button {
+            background: #e74c3c;
+            color: white;
+            border: 2px solid white;
+            padding: 15px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            font-family: inherit;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin: 10px;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+        button:hover { transform: scale(1.05); background: #c0392b; }
+        button:active { transform: scale(0.95); }
+        
+        .skill-btn {
+            background: #27ae60;
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            text-align: left;
+        }
+        .skill-btn:hover { background: #2ecc71; }
+        .skill-desc { font-size: 14px; font-weight: normal; text-transform: none; display: block; margin-top: 5px; color: #ddd; }
+
+        .level-select-container button {
+            background: #3498db;
+            padding: 10px 20px;
+        }
+        .level-select-container button:hover {
+            background: #2980b9;
+        }
+
+        .controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 14px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container"></div>
+
+<div id="ui-layer">
+    <div id="score-board">
+        关卡: <span id="level-display">1</span> | 
+        生命: <span id="lives-display">3</span> | 
+        分数: <span id="score-display">0</span> | 
+        敌人: <span id="enemy-count">0</span>
+    </div>
+    <div id="skill-status-display">技能: 无</div>
+    <div id="charge-bar-container"><div id="charge-bar"></div></div>
+    <div id="dash-status">冲刺就绪 (Shift+移动)</div>
+</div>
+
+<div id="boss-hp-bar">
+    <div id="boss-hp-fill">BOSS HP: 10 / 10</div>
+</div>
+
+<!-- 游戏开始/结束 菜单 -->
+<div id="game-over-screen" class="overlay-screen">
+    <h1 id="game-title">3D BATTLE CITY</h1>
+    <p id="game-message">保护基地 (金鹰) 并消灭敌人！</p>
+    <div id="level-selection-buttons" class="level-select-container">
+        <!-- 关卡选择按钮 -->
+        <button onclick="startGame(1)">开始 Level 1 (新手)</button>
+        <button onclick="startGame(2)">开始 Level 2 (敌人 2HP)</button>
+        <button onclick="startGame(3)">开始 Level 3 (Boss 战)</button>
+    </div>
+</div>
+
+<!-- 技能选择 菜单 -->
+<div id="skill-select-screen" class="overlay-screen">
+    <h1>关卡完成!</h1>
+    <h2>选择 Level 2 强化技能</h2>
+    <p>下一关敌人需要 2 发炮弹才能摧毁。</p>
+    
+    <button class="skill-btn" onclick="selectSkill('dash')">
+        1. 战术冲刺
+        <span class="skill-desc">按住 Shift + 方向键瞬间位移。冷却时间 2 秒。</span>
+    </button>
+    
+    <button class="skill-btn" onclick="selectSkill('laser')">
+        2. 粒子蓄力炮
+        <span class="skill-desc">长按空格蓄力 (1秒) 发射贯穿激光，摧毁路径上所有敌人和墙壁。</span>
+    </button>
+    
+    <button class="skill-btn" onclick="selectSkill('lives')">
+        3. 增援补给
+        <span class="skill-desc">立即获得 2 条额外生命。</span>
+    </button>
+</div>
+
+<div class="controls-hint">WASD 移动 | 空格 射击 | Shift (冲刺)</div>
+
+<!-- 引入 Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<!-- 添加音频 -->
+<audio id="boss-spawn-sound" preload="auto">
+    <source src="https://assets.mixkit.co/sfx/preview/mixkit-horror-demon-scream-543.mp3" type="audio/mpeg">
+</audio>
+<audio id="boss-attack-sound" preload="auto">
+    <source src="https://assets.mixkit.co/sfx/preview/mixkit-electronic-explosion-2588.mp3" type="audio/mpeg">
+</audio>
+<audio id="boss-death-sound" preload="auto">
+    <source src="https://assets.mixkit.co/sfx/preview/mixkit-explosion-with-debris-1993.mp3" type="audio/mpeg">
+</audio>
+<audio id="bombardment-warning-sound" preload="auto">
+    <source src="https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3" type="audio/mpeg">
+</audio>
+<audio id="bombardment-impact-sound" preload="auto">
+    <source src="https://assets.mixkit.co/sfx/preview/mixkit-bomb-explosion-in-the-air-2800.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+    // --- 配置常量 ---
+    const TILE_SIZE = 10;
+    const MAP_SIZE = 26; 
+    const PLAYER_SPEED = 0.8;
+    const ENEMY_SPEED = 0.4;
+    const BULLET_SPEED = 2.0;
+    const RELOAD_TIME = 30; 
+    const CHARGE_TIME_REQUIRED = 60; // 蓄力需要60帧 (约1秒)
+    const DASH_COOLDOWN_TIME = 120; // 冲刺冷却 120帧 (约2秒)
+    const DASH_DISTANCE = TILE_SIZE * 3; 
+    const BOSS_HP = 10;
+    const BOSS_BOMBARDMENT_INTERVAL = 10 * 60; // 10秒一次轰炸
+
+    // --- 全局变量 ---
+    let scene, camera, renderer;
+    let player;
+    let enemies = [];
+    let bullets = [];
+    let walls = [];
+    let particles = [];
+    let bombardmentParticles = [];
+    let baseEagle;
+    let gameActive = false;
+    let frameId;
+    
+    // 游戏状态
+    let score = 0;
+    let playerLives = 1;
+    let currentLevel = 1;
+    let enemiesToKill = 0;
+    let enemySpawnTimer = 0;
+    let maxEnemies = 4;
+    
+    // 技能状态 (改为布尔值，支持多技能)
+    let hasDash = false;
+    let hasLaser = false;
+
+    // Boss 状态
+    let bossSkillTimer = 0;
+    let isBombardmentWarning = false;
+    
+    // 键盘状态
+    const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
+
+    // --- 地图设计 ---
+    // 1: 普通墙 (可破坏), 2: 铁墙 (不可破坏), 8: 基地, 3: Boss 刷怪点
+
+    const mapLevel1 = [
+        "00000000000000000000000000",
+        "00000000000000000000000000",
+        "01100110011001100110011001",
+        "01100110011001100110011001",
+        "01100110011001100110011001",
+        "01100110011001100110011001",
+        "01100110011022200110011001",
+        "01100110011022200110011001",
+        "01100110011001100110011001",
+        "00000000000000000000000000",
+        "00000000000000000000000000",
+        "01100110011222220110011001",
+        "01100110011222220110011001",
+        "00000000000000000000000000",
+        "01100110011001100110011001",
+        "01100110011001100110011001",
+        "01100110011001100110011001",
+        "00000000000000000000000000",
+        "00000000000000000000000000",
+        "01100110011001100110011001",
+        "01100110011001100110011001",
+        "01100110011000000110011001",
+        "01100110011000000110011001",
+        "00000000000011100000000000",
+        "00000000000181100000000000",
+        "00000000000111100000000000"
+    ];
+
+    const mapLevel2 = [
+        "00000000000000000000000000",
+        "01101101100000000110110110",
+        "01101101102222220110110110",
+        "01101101100000000110110110",
+        "00000000001111110000000000",
+        "00220022001100110022002200",
+        "00220022001100110022002200",
+        "00000000000000000000000000",
+        "11110011112222221111001111",
+        "11110011112222221111001111",
+        "00000000000000000000000000",
+        "00222222001111110022222200",
+        "00222222001111110022222200",
+        "00000000000000000000000000",
+        "01101100222222222200110110",
+        "01101100222222222200110110",
+        "00000000000000000000000000",
+        "00110011001100110011001100",
+        "00110011001100110011001100",
+        "00000000000000000000000000",
+        "02200220000000000022002200",
+        "02200220000000000022002200",
+        "00000000000111100000000000",
+        "00000000000181100000000000",
+        "00000000000111100000000000",
+        "00000000000000000000000000"
+    ];
+
+    const mapLevel3 = [
+        "22222222222222222222222222",
+        "20000000000000000000000002",
+        "20111111111111111111111102",
+        "20100000000000000000000102",
+        "20102222222000022222222102",
+        "20102000000000000000002102",
+        "00000000000003000000000000", // Boss Spawn '3'
+        "20102000000000000000002102",
+        "20102222222000022222222102",
+        "20100000000000000000000102",
+        "20111111111111111111111102",
+        "20000000000000000000000002",
+        "22222222222200222222222222",
+        "00000000000000000000000000",
+        "11111111111100111111111111",
+        "10000000000000000000000001",
+        "10111111111100111111111101",
+        "10100000000000000000000101",
+        "10102222222200222222222101",
+        "10102000000000000000002101",
+        "10000000000000000000000001",
+        "11111111111100111111111111",
+        "00000000000011100000000000",
+        "00000000000181100000000000",
+        "00000000000111100000000000",
+        "00000000000000000000000000"
+    ];
+
+    // --- 初始化 ---
+    function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222);
+
+        const aspect = window.innerWidth / window.innerHeight;
+        camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
+        
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.getElementById('game-container').appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(100, 200, 100);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
+
+        // 添加粒子材质
+        const particleTexture = new THREE.CanvasTexture(generateParticleCanvas());
+        particleTexture.needsUpdate = true;
+
+        // 地面
+        const groundGeo = new THREE.PlaneGeometry(MAP_SIZE * TILE_SIZE + 40, MAP_SIZE * TILE_SIZE + 40);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.set((MAP_SIZE * TILE_SIZE)/2 - TILE_SIZE/2, -0.1, (MAP_SIZE * TILE_SIZE)/2 - TILE_SIZE/2);
+        scene.add(ground);
+
+        window.addEventListener('resize', onWindowResize, false);
+        document.addEventListener('keydown', onKeyDown, false);
+        document.addEventListener('keyup', onKeyUp, false);
+
+        document.getElementById('game-over-screen').style.display = 'block';
+
+        window.addEventListener('load', function() {
+            document.getElementById('lives-display').textContent = playerLives;
+        });
+    }
+
+    function generateParticleCanvas() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+        
+        const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+        gradient.addColorStop(0, 'rgba(255,255,255,1)');
+        gradient.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+        gradient.addColorStop(1, 'rgba(255,255,255,0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 32, 32);
+        
+        return canvas;
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function onKeyDown(e) {
+        if (e.repeat) return;
+        switch(e.key.toLowerCase()) {
+            case 'w': case 'arrowup': keys.w = true; break;
+            case 'a': case 'arrowleft': keys.a = true; break;
+            case 's': case 'arrowdown': keys.s = true; break;
+            case 'd': case 'arrowright': keys.d = true; break;
+            case ' ': keys.space = true; break;
+            case 'shift': keys.shift = true; break;
+        }
+    }
+
+    function onKeyUp(e) {
+        switch(e.key.toLowerCase()) {
+            case 'w': case 'arrowup': keys.w = false; break;
+            case 'a': case 'arrowleft': keys.a = false; break;
+            case 's': case 'arrowdown': keys.s = false; break;
+            case 'd': case 'arrowright': keys.d = false; break;
+            case ' ': keys.space = false; break;
+            case 'shift': keys.shift = false; break;
+        }
+    }
+
+    // --- 游戏逻辑类 ---
+
+    class Tank {
+        constructor(x, z, color, isPlayer = false, hp = 1, isBoss = false) {
+            this.mesh = new THREE.Group();
+            
+            this.isBoss = isBoss;
+            this.maxHp = hp;
+            this.hp = hp;
+            this.baseColor = new THREE.Color(color);
+
+            // Boss 设定
+            if (this.isBoss) {
+                this.baseColor.setHex(0x8A2BE2); // Boss color: Blue-violet
+                this.size = TILE_SIZE * 1.5; 
+                this.speed = ENEMY_SPEED * 0.5; 
+                this.mesh.scale.set(1.5, 1.5, 1.5);
+                
+                // Boss 出现音效
+                try {
+                    const bossSpawnSound = document.getElementById('boss-spawn-sound');
+                    bossSpawnSound.currentTime = 0;
+                    bossSpawnSound.volume = 0.5;
+                    bossSpawnSound.play().catch(e => console.log("Audio play failed:", e));
+                } catch (e) {
+                    console.log("Audio error:", e);
+                }
+            } else {
+                this.size = TILE_SIZE * 0.75; 
+            }
+
+            this.bodyMat = new THREE.MeshStandardMaterial({ color: this.baseColor });
+            this.turretMat = new THREE.MeshStandardMaterial({ color: this.baseColor });
+
+            // 身体
+            const bodyGeo = new THREE.BoxGeometry(TILE_SIZE * 0.8, TILE_SIZE * 0.5, TILE_SIZE * 0.8);
+            this.body = new THREE.Mesh(bodyGeo, this.bodyMat);
+            this.body.position.y = TILE_SIZE * 0.25;
+            this.body.castShadow = true;
+            this.body.receiveShadow = true;
+            this.mesh.add(this.body);
+
+            // 炮塔/炮管
+            const turretGeo = new THREE.BoxGeometry(TILE_SIZE * 0.5, TILE_SIZE * 0.3, TILE_SIZE * 0.5);
+            this.turret = new THREE.Mesh(turretGeo, this.turretMat);
+            this.turret.position.y = TILE_SIZE * 0.6;
+            this.turret.castShadow = true;
+            this.mesh.add(this.turret);
+
+            const barrelGeo = new THREE.CylinderGeometry(TILE_SIZE * 0.08, TILE_SIZE * 0.08, TILE_SIZE * 0.6, 8);
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+            this.barrel = new THREE.Mesh(barrelGeo, barrelMat);
+            this.barrel.rotation.x = Math.PI / 2;
+            this.barrel.position.y = TILE_SIZE * 0.6;
+            this.barrel.position.z = TILE_SIZE * 0.4;
+            this.mesh.add(this.barrel);
+
+            this.mesh.position.set(x, 0, z);
+            scene.add(this.mesh);
+
+            // 属性
+            this.speed = isPlayer ? PLAYER_SPEED : this.speed || ENEMY_SPEED;
+            this.isPlayer = isPlayer;
+            this.direction = new THREE.Vector3(0, 0, 1); 
+            this.reloadTimer = 0;
+            this.alive = true;
+            
+            this.flashTimer = 0; // 受伤闪烁
+
+            // 技能属性 (仅玩家)
+            if (isPlayer) {
+                this.chargeCounter = 0; 
+                this.dashCooldown = 0; 
+            }
+
+            // AI 专用
+            this.aiChangeDirTimer = 0;
+            this.aiShootTimer = 0;
+        }
+
+        update() {
+            if (!this.alive) return;
+
+            if (this.reloadTimer > 0) this.reloadTimer--;
+            if (this.flashTimer > 0) {
+                this.flashTimer--;
+                if (this.flashTimer === 0) {
+                    this.bodyMat.color.copy(this.baseColor);
+                    this.turretMat.color.copy(this.baseColor);
+                } else {
+                    const flash = Math.floor(this.flashTimer / 5) % 2 === 0;
+                    this.bodyMat.color.setHex(flash ? 0xffffff : this.baseColor.getHex());
+                    this.turretMat.color.setHex(flash ? 0xffffff : this.baseColor.getHex());
+                }
+            }
+            
+            if (this.isBoss) {
+                updateBossUI(this);
+            }
+
+            if (this.isPlayer) {
+                this.handlePlayerInput();
+                // 技能 UI 更新
+                if (hasDash) {
+                    if (this.dashCooldown > 0) this.dashCooldown--;
+                    document.getElementById('dash-status').style.color = this.dashCooldown <= 0 ? '#00ff00' : '#888';
+                    document.getElementById('dash-status').innerText = this.dashCooldown <= 0 ? "冲刺就绪 (Shift+移动)" : `冲刺冷却 (${Math.ceil(this.dashCooldown/60)}s)`;
+                }
+            } else if (!this.isBoss) {
+                this.handleAI();
+            } else {
+                this.handleBossAI();
+            }
+        }
+
+        handlePlayerInput() {
+            let dx = 0;
+            let dz = 0;
+            let moved = false;
+
+            if (keys.w) { dz = -1; moved = true; }
+            else if (keys.s) { dz = 1; moved = true; }
+            else if (keys.a) { dx = -1; moved = true; }
+            else if (keys.d) { dx = 1; moved = true; }
+
+            if (dx !== 0 && dz !== 0) dx = 0; 
+
+            // 冲刺技能逻辑
+            if (moved && keys.shift && hasDash && this.dashCooldown <= 0) {
+                this.dash(dx, dz);
+                return; 
+            }
+
+            if (moved) {
+                if (dx === 1) this.mesh.rotation.y = Math.PI / 2;
+                if (dx === -1) this.mesh.rotation.y = -Math.PI / 2;
+                if (dz === 1) this.mesh.rotation.y = 0;
+                if (dz === -1) this.mesh.rotation.y = Math.PI;
+
+                this.direction.set(dx, 0, dz);
+                
+                const nextX = this.mesh.position.x + dx * this.speed;
+                const nextZ = this.mesh.position.z + dz * this.speed;
+
+                if (!this.checkCollision(nextX, nextZ)) {
+                    this.mesh.position.x = nextX;
+                    this.mesh.position.z = nextZ;
+                }
+            }
+
+            // 射击 / 蓄力技能逻辑
+            if (hasLaser) {
+                if (keys.space) {
+                    this.chargeCounter++;
+                    const percent = Math.min(100, (this.chargeCounter / CHARGE_TIME_REQUIRED) * 100);
+                    document.getElementById('charge-bar').style.width = percent + '%';
+                    
+                    if (this.chargeCounter > CHARGE_TIME_REQUIRED) {
+                        this.bodyMat.color.setHex(Math.random() > 0.5 ? 0x00ffff : 0xffffff);
+                    }
+                } else {
+                    if (this.chargeCounter > CHARGE_TIME_REQUIRED) {
+                        this.fireLaser();
+                    } else if (this.chargeCounter > 0 && this.chargeCounter <= CHARGE_TIME_REQUIRED) {
+                        this.shoot(); 
+                    }
+                    if (this.chargeCounter > 0) {
+                        this.chargeCounter = 0;
+                        document.getElementById('charge-bar').style.width = '0%';
+                        this.bodyMat.color.copy(this.baseColor);
+                    }
+                }
+            } else {
+                if (keys.space) {
+                    this.shoot();
+                }
+            }
+        }
+
+        dash(dx, dz) {
+            const dashVec = new THREE.Vector3(dx, 0, dz).multiplyScalar(DASH_DISTANCE);
+            const targetPos = this.mesh.position.clone().add(dashVec);
+            
+            if (!this.checkCollision(targetPos.x, targetPos.z)) {
+                createExplosion(this.mesh.position, 0xffff00, 0.5);
+                this.mesh.position.copy(targetPos);
+                createExplosion(this.mesh.position, 0xffff00, 0.5);
+                this.dashCooldown = DASH_COOLDOWN_TIME;
+            } else {
+                const halfPos = this.mesh.position.clone().add(dashVec.multiplyScalar(0.5));
+                if (!this.checkCollision(halfPos.x, halfPos.z)) {
+                    this.mesh.position.copy(halfPos);
+                    this.dashCooldown = DASH_COOLDOWN_TIME;
+                }
+            }
+            
+            if (dx === 1) this.mesh.rotation.y = Math.PI / 2;
+            if (dx === -1) this.mesh.rotation.y = -Math.PI / 2;
+            if (dz === 1) this.mesh.rotation.y = 0;
+            if (dz === -1) this.mesh.rotation.y = Math.PI;
+            this.direction.set(dx, 0, dz);
+        }
+
+        fireLaser() {
+            // 激光逻辑：发射一个长圆柱体检测碰撞
+            const laserLen = TILE_SIZE * MAP_SIZE; 
+            const laserGeo = new THREE.CylinderGeometry(TILE_SIZE * 0.2, TILE_SIZE * 0.2, laserLen, 8);
+            const laserMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+            const laserMesh = new THREE.Mesh(laserGeo, laserMat);
+            
+            const angle = Math.atan2(this.direction.x, this.direction.z);
+            laserMesh.rotation.x = Math.PI / 2; 
+            laserMesh.rotation.z = -angle; 
+            
+            const offset = this.direction.clone().multiplyScalar(laserLen / 2 + TILE_SIZE);
+            laserMesh.position.copy(this.mesh.position).add(offset);
+            laserMesh.position.y = TILE_SIZE * 0.6;
+            
+            scene.add(laserMesh);
+
+            setTimeout(() => scene.remove(laserMesh), 200);
+
+            const startGridX = Math.floor(this.mesh.position.x / TILE_SIZE);
+            const startGridZ = Math.floor(this.mesh.position.z / TILE_SIZE);
+            
+            let cx = startGridX;
+            let cz = startGridZ;
+            
+            for(let k=0; k<MAP_SIZE; k++) {
+                cx += this.direction.x;
+                cz += this.direction.z;
+                
+                if (cx < 0 || cx >= MAP_SIZE || cz < 0 || cz >= MAP_SIZE) break;
+                
+                // 1. 摧毁墙壁
+                const wallIndex = walls.findIndex(w => w.gridX === cx && w.gridZ === cz);
+                if (wallIndex !== -1) {
+                    const wall = walls[wallIndex];
+                    scene.remove(wall.mesh);
+                    walls.splice(wallIndex, 1);
+                    createExplosion(wall.mesh.position, 0x00ffff, 0.8);
+                }
+                
+                // 2. 击中敌人/Boss - 只扣除2点血
+                const hitTank = enemies.find(e => {
+                    const gx = Math.floor(e.mesh.position.x / TILE_SIZE);
+                    const gz = Math.floor(e.mesh.position.z / TILE_SIZE);
+                    return gx === cx && gz === cz;
+                });
+                
+                if (hitTank) {
+                    hitTank.takeDamage(2); // 重要：粒子加能炮只扣除2点血
+                }
+            }
+        }
+        
+        handleBossAI() {
+            // Boss 行为：主要是移动和射击
+            this.aiChangeDirTimer--;
+            let dx = this.direction.x;
+            let dz = this.direction.z;
+            const nextX = this.mesh.position.x + dx * this.speed;
+            const nextZ = this.mesh.position.z + dz * this.speed;
+
+            let blocked = this.checkCollision(nextX, nextZ);
+
+            if (!blocked) {
+                this.mesh.position.x = nextX;
+                this.mesh.position.z = nextZ;
+            }
+
+            if (blocked || this.aiChangeDirTimer <= 0) {
+                const dirs = [
+                    new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1),
+                    new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0)
+                ];
+                const rnd = Math.floor(Math.random() * dirs.length);
+                this.direction = dirs[rnd];
+                
+                if (this.direction.x === 1) this.mesh.rotation.y = Math.PI / 2;
+                if (this.direction.x === -1) this.mesh.rotation.y = -Math.PI / 2;
+                if (this.direction.z === 1) this.mesh.rotation.y = 0;
+                if (this.direction.z === -1) this.mesh.rotation.y = Math.PI;
+
+                this.aiChangeDirTimer = 120 + Math.random() * 120; // Boss 换向慢一点
+            }
+
+            this.aiShootTimer--;
+            if (this.aiShootTimer <= 0) {
+                this.shoot();
+                this.aiShootTimer = 80 + Math.random() * 100;
+            }
+        }
+
+        handleAI() {
+            const dx = this.direction.x;
+            const dz = this.direction.z;
+            const nextX = this.mesh.position.x + dx * this.speed;
+            const nextZ = this.mesh.position.z + dz * this.speed;
+
+            let blocked = this.checkCollision(nextX, nextZ);
+
+            if (!blocked) {
+                this.mesh.position.x = nextX;
+                this.mesh.position.z = nextZ;
+            }
+
+            this.aiChangeDirTimer--;
+            if (blocked || this.aiChangeDirTimer <= 0) {
+                const dirs = [
+                    new THREE.Vector3(0, 0, 1),
+                    new THREE.Vector3(0, 0, -1),
+                    new THREE.Vector3(1, 0, 0),
+                    new THREE.Vector3(-1, 0, 0)
+                ];
+                const rnd = Math.floor(Math.random() * dirs.length);
+                this.direction = dirs[rnd];
+                
+                if (this.direction.x === 1) this.mesh.rotation.y = Math.PI / 2;
+                if (this.direction.x === -1) this.mesh.rotation.y = -Math.PI / 2;
+                if (this.direction.z === 1) this.mesh.rotation.y = 0;
+                if (this.direction.z === -1) this.mesh.rotation.y = Math.PI;
+
+                this.aiChangeDirTimer = 60 + Math.random() * 100;
+            }
+
+            this.aiShootTimer--;
+            if (this.aiShootTimer <= 0) {
+                this.shoot();
+                this.aiShootTimer = 50 + Math.random() * 100;
+            }
+        }
+
+        checkCollision(x, z) {
+            const halfSize = this.size / 2;
+            const padding = 0.5; 
+
+            if (x < 0 || x > MAP_SIZE * TILE_SIZE || z < 0 || z > MAP_SIZE * TILE_SIZE) return true;
+
+            const minX = Math.floor((x - halfSize + padding) / TILE_SIZE);
+            const maxX = Math.floor((x + halfSize - padding) / TILE_SIZE);
+            const minZ = Math.floor((z - halfSize + padding) / TILE_SIZE);
+            const maxZ = Math.floor((z + halfSize - padding) / TILE_SIZE);
+
+            for (let i = minX; i <= maxX; i++) {
+                for (let j = minZ; j <= maxZ; j++) {
+                    const wall = walls.find(w => w.gridX === i && w.gridZ === j);
+                    if (wall) return true;
+                    if (baseEagle && baseEagle.gridX === i && baseEagle.gridZ === j) return true;
+                }
+            }
+
+            const otherTanks = this.isPlayer ? enemies : [player, ...enemies.filter(e => e !== this)];
+            for (let t of otherTanks) {
+                if (t && t.alive) {
+                    const dx = t.mesh.position.x - x;
+                    const dz = t.mesh.position.z - z;
+                    const dist = Math.sqrt(dx*dx + dz*dz);
+                    if (dist < this.size / 2 + t.size / 2) return true;
+                }
+            }
+
+            return false;
+        }
+
+        shoot() {
+            if (this.reloadTimer > 0) return;
+            const spawnPos = this.mesh.position.clone();
+            spawnPos.y = TILE_SIZE * 0.6;
+            spawnPos.add(this.direction.clone().multiplyScalar(TILE_SIZE * 0.6 * (this.isBoss ? 1.5 : 1)));
+            bullets.push(new Bullet(spawnPos, this.direction.clone(), this.isPlayer));
+            this.reloadTimer = RELOAD_TIME * (this.isBoss ? 2 : 1); // Boss 射速稍慢
+            
+            // Boss 攻击音效
+            if (this.isBoss) {
+                try {
+                    const bossAttackSound = document.getElementById('boss-attack-sound');
+                    bossAttackSound.currentTime = 0;
+                    bossAttackSound.volume = 0.3;
+                    bossAttackSound.play().catch(e => console.log("Audio play failed:", e));
+                } catch (e) {
+                    console.log("Audio error:", e);
+                }
+            }
+        }
+
+        takeDamage(dmg = 1) {
+            this.hp -= dmg;
+            if (this.hp <= 0) {
+                this.destroy();
+            } else {
+                this.flashTimer = 20; 
+                createExplosion(this.mesh.position, 0xaaaaaa, 0.5); 
+            }
+        }
+
+        destroy() {
+            this.alive = false;
+            
+            // 爆炸特效
+            if (this.isBoss) {
+                createBossDeathEffect(this.mesh.position);
+                // Boss 死亡音效
+                try {
+                    const bossDeathSound = document.getElementById('boss-death-sound');
+                    bossDeathSound.currentTime = 0;
+                    bossDeathSound.volume = 0.6;
+                    bossDeathSound.play().catch(e => console.log("Audio play failed:", e));
+                } catch (e) {
+                    console.log("Audio error:", e);
+                }
+            } else {
+                createExplosion(this.mesh.position, this.isPlayer ? 0xff0000 : 0xffaa00, this.isBoss ? 3.0 : 1.0);
+            }
+            
+            scene.remove(this.mesh);
+            
+            if (this.isPlayer) {
+                playerLives--;
+                updateUI();
+                if (playerLives > 0) {
+                    setTimeout(() => respawnPlayer(), 1000);
+                } else {
+                    gameOver("GAME OVER");
+                }
+            } else if (this.isBoss) {
+                score += 5000; // Boss 奖励
+                enemiesToKill--;
+                updateUI();
+                setTimeout(() => levelComplete(), 2000); 
+            } else {
+                score += 100;
+                enemiesToKill--;
+                updateUI();
+                if (currentLevel < 3 && enemiesToKill <= 0 && enemies.length <= 1) { 
+                     setTimeout(() => levelComplete(), 1000);
+                }
+            }
+        }
+    }
+
+    class Bullet {
+        constructor(position, direction, fromPlayer) {
+            this.mesh = new THREE.Mesh(
+                new THREE.SphereGeometry(TILE_SIZE * 0.15, 8, 8),
+                new THREE.MeshBasicMaterial({ color: 0xffffff })
+            );
+            this.mesh.position.copy(position);
+            this.direction = direction;
+            this.speed = BULLET_SPEED;
+            this.fromPlayer = fromPlayer;
+            this.alive = true;
+            scene.add(this.mesh);
+        }
+
+        update() {
+            if (!this.alive) return;
+
+            this.mesh.position.add(this.direction.clone().multiplyScalar(this.speed));
+
+            if (this.mesh.position.x < 0 || this.mesh.position.x > MAP_SIZE * TILE_SIZE ||
+                this.mesh.position.z < 0 || this.mesh.position.z > MAP_SIZE * TILE_SIZE) {
+                this.destroy();
+                return;
+            }
+
+            const gridX = Math.floor(this.mesh.position.x / TILE_SIZE);
+            const gridZ = Math.floor(this.mesh.position.z / TILE_SIZE);
+
+            // 碰撞墙壁
+            const hitWallIndex = walls.findIndex(w => w.gridX === gridX && w.gridZ === gridZ);
+            if (hitWallIndex !== -1) {
+                const wall = walls[hitWallIndex];
+                if (wall.type === 1) { 
+                    scene.remove(wall.mesh);
+                    walls.splice(hitWallIndex, 1);
+                    createExplosion(wall.mesh.position, 0xCD853F, 0.5);
+                } else if (wall.type === 2) { 
+                    createExplosion(this.mesh.position, 0xffffff, 0.2);
+                }
+                this.destroy();
+                return;
+            }
+
+            // 碰撞基地
+            if (baseEagle && baseEagle.gridX === gridX && baseEagle.gridZ === gridZ) {
+                createExplosion(baseEagle.mesh.position, 0xff0000, 2.0);
+                scene.remove(baseEagle.mesh);
+                baseEagle = null;
+                this.destroy();
+                gameOver("基地被摧毁！");
+                return;
+            }
+
+            // 碰撞坦克
+            const targets = this.fromPlayer ? enemies : [player];
+            for (let t of targets) {
+                if (t && t.alive) {
+                    const dx = t.mesh.position.x - this.mesh.position.x;
+                    const dz = t.mesh.position.z - this.mesh.position.z;
+                    if (Math.sqrt(dx*dx + dz*dz) < TILE_SIZE * 0.5 * (t.isBoss ? 1.5 : 1)) {
+                        t.takeDamage(1);
+                        this.destroy();
+                        return;
+                    }
+                }
+            }
+        }
+
+        destroy() {
+            this.alive = false;
+            scene.remove(this.mesh);
+        }
+    }
+
+    // --- 新增：轰炸特效类 ---
+    class BombardmentEffect {
+        constructor(centerX, centerZ, warningTime = 2000) {
+            this.centerX = centerX;
+            this.centerZ = centerZ;
+            this.warningTime = warningTime;
+            this.startTime = Date.now();
+            this.particles = [];
+            this.hasExploded = false;
+            this.createWarningEffect();
+            
+            // 警告音效
+            try {
+                const warningSound = document.getElementById('bombardment-warning-sound');
+                warningSound.currentTime = 0;
+                warningSound.volume = 0.4;
+                warningSound.play().catch(e => console.log("Audio play failed:", e));
+            } catch (e) {
+                console.log("Audio error:", e);
+            }
+        }
+
+        createWarningEffect() {
+            const warningColor = 0xFF00FF;
+            
+            // 创建警告区域的粒子效果（从天而降）
+            for (let x = this.centerX - 1; x <= this.centerX + 1; x++) {
+                for (let z = this.centerZ - 1; z <= this.centerZ + 1; z++) {
+                    const worldX = x * TILE_SIZE + TILE_SIZE/2;
+                    const worldZ = z * TILE_SIZE + TILE_SIZE/2;
+                    
+                    // 创建从天而降的粒子流
+                    for (let i = 0; i < 5; i++) {
+                        const particle = new THREE.Mesh(
+                            new THREE.SphereGeometry(TILE_SIZE * 0.1, 8, 8),
+                            new THREE.MeshBasicMaterial({ color: warningColor, transparent: true, opacity: 0.8 })
+                        );
+                        
+                        // 粒子从天上开始
+                        particle.position.set(
+                            worldX + (Math.random() - 0.5) * TILE_SIZE,
+                            200 + Math.random() * 50, // 从200高度开始
+                            worldZ + (Math.random() - 0.5) * TILE_SIZE
+                        );
+                        
+                        particle.velocity = new THREE.Vector3(
+                            0,
+                            -2 - Math.random() * 2, // 向下运动
+                            0
+                        );
+                        
+                        scene.add(particle);
+                        this.particles.push({
+                            mesh: particle,
+                            velocity: particle.velocity,
+                            targetY: TILE_SIZE * 0.1
+                        });
+                    }
+                }
+            }
+        }
+
+        update() {
+            const elapsed = Date.now() - this.startTime;
+            
+            // 更新警告粒子
+            for (let i = this.particles.length - 1; i >= 0; i--) {
+                const p = this.particles[i];
+                p.mesh.position.add(p.velocity);
+                p.mesh.material.opacity = Math.min(0.8, elapsed / this.warningTime);
+                
+                // 粒子到达地面
+                if (p.mesh.position.y <= p.targetY) {
+                    p.mesh.position.y = p.targetY;
+                    p.velocity.set(0, 0, 0);
+                }
+            }
+            
+            // 时间到，执行爆炸
+            if (elapsed >= this.warningTime && !this.hasExploded) {
+                this.explode();
+                this.hasExploded = true;
+            }
+            
+            // 爆炸后的清理
+            if (this.hasExploded) {
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+                    p.mesh.material.opacity *= 0.95;
+                    if (p.mesh.material.opacity <= 0.05) {
+                        scene.remove(p.mesh);
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+            
+            return this.particles.length > 0;
+        }
+
+        explode() {
+            // 爆炸音效
+            try {
+                const impactSound = document.getElementById('bombardment-impact-sound');
+                impactSound.currentTime = 0;
+                impactSound.volume = 0.6;
+                impactSound.play().catch(e => console.log("Audio play failed:", e));
+            } catch (e) {
+                console.log("Audio error:", e);
+            }
+            
+            // 创建爆炸效果
+            for (let x = this.centerX - 1; x <= this.centerX + 1; x++) {
+                for (let z = this.centerZ - 1; z <= this.centerZ + 1; z++) {
+                    const worldX = x * TILE_SIZE + TILE_SIZE/2;
+                    const worldZ = z * TILE_SIZE + TILE_SIZE/2;
+                    
+                    // 大规模爆炸粒子
+                    for (let i = 0; i < 15; i++) {
+                        setTimeout(() => {
+                            createExplosion(
+                                new THREE.Vector3(
+                                    worldX + (Math.random() - 0.5) * TILE_SIZE * 2,
+                                    TILE_SIZE * 0.5,
+                                    worldZ + (Math.random() - 0.5) * TILE_SIZE * 2
+                                ),
+                                0xFF00FF,
+                                1.5 + Math.random()
+                            );
+                        }, i * 50);
+                    }
+                    
+                    // 检查是否击中基地
+                    if (baseEagle && baseEagle.gridX === x && baseEagle.gridZ === z) continue;
+
+                    // 检查是否击中玩家
+                    if (player && player.alive) {
+                        const px = Math.floor(player.mesh.position.x / TILE_SIZE);
+                        const pz = Math.floor(player.mesh.position.z / TILE_SIZE);
+                        if (px === x && pz === z) {
+                            player.takeDamage(1);
+                        }
+                    }
+                    
+                    // 检查是否击中敌人/Boss
+                    enemies.forEach(e => {
+                        if (!e.alive) return;
+                        const ex = Math.floor(e.mesh.position.x / TILE_SIZE);
+                        const ez = Math.floor(e.mesh.position.z / TILE_SIZE);
+                        if (ex === x && ez === z) {
+                            e.takeDamage(1); 
+                        }
+                    });
+                }
+            }
+        }
+
+        cleanup() {
+            this.particles.forEach(p => scene.remove(p.mesh));
+            this.particles = [];
+        }
+    }
+
+    // --- 辅助函数 ---
+
+    function createBossDeathEffect(position) {
+        // 大型爆炸效果
+        for (let i = 0; i < 50; i++) {
+            setTimeout(() => {
+                createExplosion(
+                    new THREE.Vector3(
+                        position.x + (Math.random() - 0.5) * TILE_SIZE * 3,
+                        TILE_SIZE * 2,
+                        position.z + (Math.random() - 0.5) * TILE_SIZE * 3
+                    ),
+                    0x8A2BE2,
+                    2.0
+                );
+            }, i * 50);
+        }
+        
+        // 冲击波效果
+        const shockwaveGeometry = new THREE.RingGeometry(1, 10, 32);
+        const shockwaveMaterial = new THREE.MeshBasicMaterial({
+            color: 0x8A2BE2,
+            transparent: true,
+            opacity: 0.7,
+            side: THREE.DoubleSide
+        });
+        const shockwave = new THREE.Mesh(shockwaveGeometry, shockwaveMaterial);
+        shockwave.position.copy(position);
+        shockwave.position.y = 1;
+        shockwave.rotation.x = -Math.PI / 2;
+        scene.add(shockwave);
+        
+        // 冲击波动画
+        let scale = 1;
+        const animateShockwave = () => {
+            scale += 0.3;
+            shockwave.scale.set(scale, scale, scale);
+            shockwave.material.opacity *= 0.95;
+            
+            if (shockwave.material.opacity > 0.05) {
+                requestAnimationFrame(animateShockwave);
+            } else {
+                scene.remove(shockwave);
+            }
+        };
+        animateShockwave();
+    }
+
+    function updateBossUI(boss) {
+        if (!boss || !boss.alive || boss.isPlayer || !boss.isBoss) {
+            document.getElementById('boss-hp-bar').style.display = 'none';
+            return;
+        }
+
+        document.getElementById('boss-hp-bar').style.display = 'block';
+        const percent = (boss.hp / boss.maxHp) * 100;
+        document.getElementById('boss-hp-fill').style.width = percent + '%';
+        document.getElementById('boss-hp-fill').innerText = `BOSS HP: ${boss.hp} / ${boss.maxHp}`;
+    }
+
+    // --- 修复第三关构建，确保小坦克有2滴血 ---
+    function buildMap(levelIndex) {
+        walls.forEach(w => scene.remove(w.mesh));
+        walls = [];
+        if (baseEagle) scene.remove(baseEagle.mesh);
+        
+        let mapData;
+        if (levelIndex === 1) mapData = mapLevel1;
+        else if (levelIndex === 2) mapData = mapLevel2;
+        else mapData = mapLevel3;
+
+        // 设置敌人数量：Level 3有Boss + 3个小坦克
+        enemiesToKill = (levelIndex === 3) ? 4 : 20;
+
+        // 存储Boss位置用于生成小坦克
+        let bossSpawnPoint = null;
+
+        for (let z = 0; z < MAP_SIZE; z++) {
+            for (let x = 0; x < MAP_SIZE; x++) {
+                const char = mapData[z][x];
+                if (char === '1') createWall(x, z, 1);
+                else if (char === '2') createWall(x, z, 2);
+                else if (char === '8') createBase(x, z);
+                else if (char === '3' && levelIndex === 3) {
+                    // Boss 刷怪点
+                    const worldX = x * TILE_SIZE + TILE_SIZE/2;
+                    const worldZ = z * TILE_SIZE + TILE_SIZE/2;
+                    enemies.push(new Tank(worldX, worldZ, 0x8A2BE2, false, BOSS_HP, true));
+                    bossSpawnPoint = {x: x, z: z};
+                }
+            }
+        }
+        
+        // Level 3 额外生成3个小坦克，每条2滴血
+        if (levelIndex === 3 && bossSpawnPoint) {
+            const smallTankSpawns = [
+                {x: bossSpawnPoint.x + 3, z: bossSpawnPoint.z},
+                {x: bossSpawnPoint.x - 3, z: bossSpawnPoint.z},
+                {x: bossSpawnPoint.x, z: bossSpawnPoint.z + 3}
+            ];
+            
+            smallTankSpawns.forEach(spawn => {
+                if (spawn.x >= 0 && spawn.x < MAP_SIZE && spawn.z >= 0 && spawn.z < MAP_SIZE) {
+                    const worldX = spawn.x * TILE_SIZE + TILE_SIZE/2;
+                    const worldZ = spawn.z * TILE_SIZE + TILE_SIZE/2;
+                    enemies.push(new Tank(worldX, worldZ, 0xDC143C, false, 2)); // 2滴血
+                }
+            });
+        }
+    }
+
+    function executeBombardment() {
+        if (!gameActive || currentLevel !== 3) return;
+        
+        const minGrid = 3;
+        const maxGrid = MAP_SIZE - 3; 
+
+        // 随机选择轰炸中心点 (3x3区域)
+        const centerX = Math.floor(Math.random() * (maxGrid - minGrid)) + minGrid;
+        const centerZ = Math.floor(Math.random() * (maxGrid - minGrid)) + minGrid;
+        
+        bombardmentParticles.push(new BombardmentEffect(centerX, centerZ, 2000));
+    }
+
+    function updateUI() {
+        document.getElementById('level-display').innerText = currentLevel;
+        document.getElementById('lives-display').innerText = playerLives;
+        document.getElementById('score-display').innerText = score;
+        document.getElementById('enemy-count').innerText = currentLevel === 3 ? "Boss" : enemiesToKill;
+
+        // 技能状态显示
+        const skillStatus = [];
+        if (hasDash) skillStatus.push("冲刺");
+        if (hasLaser) skillStatus.push("激光");
+        document.getElementById('skill-status-display').innerText = `技能: ${skillStatus.join(', ')}`;
+        
+        document.getElementById('dash-status').style.display = hasDash ? 'block' : 'none';
+        document.getElementById('charge-bar-container').style.display = hasLaser ? 'block' : 'none';
+    }
+
+    // --- 修复关卡跳转和技能选择 ---
+    function startGame(level) {
+        gameActive = true;
+        currentLevel = level;
+        
+        // 重置/初始化游戏状态
+        score = 0;
+        playerLives = 1; // 初始生命为1
+        hasDash = false;
+        hasLaser = false;
+
+        // 如果是Level 2，先不开始游戏，显示技能选择
+        if (level === 2) {
+            showSkillSelect();
+            return; // 不继续执行后面的游戏初始化
+        }
+        
+        if (level === 3) {
+            // Level 3: 赋予所有技能
+            hasDash = true;
+            hasLaser = true;
+            playerLives = 3; // Boss关给3条命
+        }
+
+        // 清理场景
+        if (player) { scene.remove(player.mesh); player = null; }
+        enemies.forEach(e => scene.remove(e.mesh));
+        enemies = [];
+        bullets.forEach(b => scene.remove(b.mesh));
+        bullets = [];
+        particles.forEach(p => scene.remove(p.mesh));
+        particles = [];
+        bombardmentParticles.forEach(p => p.cleanup());
+        bombardmentParticles = [];
+
+        document.getElementById('game-over-screen').style.display = 'none';
+        document.getElementById('skill-select-screen').style.display = 'none';
+        document.getElementById('boss-hp-bar').style.display = 'none';
+
+        buildMap(level);
+        respawnPlayer();
+        updateUI();
+        
+        cancelAnimationFrame(frameId);
+        animate();
+    }
+
+    // --- 新增技能选择显示函数 ---
+    function showSkillSelect() {
+        gameActive = false;
+        document.getElementById('game-over-screen').style.display = 'none';
+        document.getElementById('skill-select-screen').style.display = 'block';
+    }
+
+    // --- 修复技能选择函数 ---
+    function selectSkill(skill) {
+        if (skill === 'dash') hasDash = true;
+        if (skill === 'laser') hasLaser = true;
+        if (skill === 'lives') playerLives += 2;
+        
+        // 开始第二关
+        currentLevel = 2;
+        gameActive = true;
+        
+        // 清理场景
+        if (player) { scene.remove(player.mesh); player = null; }
+        enemies.forEach(e => scene.remove(e.mesh));
+        enemies = [];
+        bullets.forEach(b => scene.remove(b.mesh));
+        bullets = [];
+        particles.forEach(p => scene.remove(p.mesh));
+        particles = [];
+
+        document.getElementById('skill-select-screen').style.display = 'none';
+        buildMap(2);
+        respawnPlayer();
+        updateUI();
+        
+        cancelAnimationFrame(frameId);
+        animate();
+    }
+
+    // --- 修复关卡完成逻辑 ---
+    function levelComplete() {
+        gameActive = false;
+        
+        document.getElementById('level-selection-buttons').style.display = 'none';
+
+        if (currentLevel === 1) {
+            // L1 -> Skill Select
+            showSkillSelect();
+        } else if (currentLevel === 2) {
+            // L2 -> L3 过渡
+            hasDash = true;
+            hasLaser = true;
+            playerLives = 3; // 额外的生命
+
+            document.getElementById('game-title').innerText = "BOSS 出现！";
+            document.getElementById('game-message').innerHTML = `恭喜进入第三关！<br>你已获得 **战术冲刺** 和 **粒子蓄力炮** 技能，生命 +2。<br>Boss 有 **${BOSS_HP} 点血**，每10秒释放一次轰炸！`;
+            
+            // 显示 Level 3 按钮
+            document.getElementById('level-selection-buttons').style.display = 'block';
+            document.getElementById('level-selection-buttons').innerHTML = `
+                <button onclick="startGame(3)">开始 Level 3 Boss 战</button>
+            `;
+            document.getElementById('game-over-screen').style.display = 'block';
+
+        } else if (currentLevel === 3) {
+            // L3 完成
+            gameOver("恭喜! 所有关卡已清理!");
+        }
+    }
+
+    function gameOver(msg) {
+        gameActive = false;
+        document.getElementById('game-title').innerText = msg;
+        document.getElementById('game-message').innerText = `最终分数: ${score}`;
+        
+        // 显示所有关卡选择按钮
+        document.getElementById('level-selection-buttons').style.display = 'block';
+        document.getElementById('level-selection-buttons').innerHTML = `
+            <button onclick="startGame(1)">开始 Level 1 (新手)</button>
+            <button onclick="startGame(2)">开始 Level 2 (敌人 2HP)</button>
+            <button onclick="startGame(3)">开始 Level 3 (Boss 战)</button>
+        `;
+
+        document.getElementById('game-over-screen').style.display = 'block';
+    }
+
+    // --- 创建墙和基地 ---
+    function createWall(x, z, type) {
+        const h = TILE_SIZE; 
+        const geo = new THREE.BoxGeometry(TILE_SIZE, h, TILE_SIZE);
+        
+        let mat;
+        if (type === 1) { 
+            mat = new THREE.MeshStandardMaterial({ color: 0xCD853F, roughness: 0.9 });
+        } else { 
+            mat = new THREE.MeshStandardMaterial({ color: 0xA9A9A9, metalness: 0.8, roughness: 0.2 });
+        }
+        
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(x * TILE_SIZE + TILE_SIZE/2, h/2, z * TILE_SIZE + TILE_SIZE/2);
+        
+        if(type === 1) mesh.scale.set(0.95, 0.95, 0.95);
+
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        walls.push({ mesh: mesh, type: type, gridX: x, gridZ: z });
+        scene.add(mesh);
+    }
+
+    function createBase(x, z) {
+        const group = new THREE.Group();
+        const baseGeo = new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE/2, TILE_SIZE);
+        const baseMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+        baseMesh.position.y = TILE_SIZE/4;
+        group.add(baseMesh);
+
+        const eagleGeo = new THREE.SphereGeometry(TILE_SIZE/3, 8, 8);
+        const eagleMat = new THREE.MeshStandardMaterial({ color: 0xFFD700, emissive: 0xaa8800, emissiveIntensity: 0.2 });
+        const eagle = new THREE.Mesh(eagleGeo, eagleMat);
+        eagle.position.y = TILE_SIZE * 0.6;
+        group.add(eagle);
+
+        group.position.set(x * TILE_SIZE + TILE_SIZE/2, 0, z * TILE_SIZE + TILE_SIZE/2);
+        scene.add(group);
+        baseEagle = { mesh: group, gridX: x, gridZ: z };
+    }
+
+    function createExplosion(pos, color, scale = 1.0) {
+        const count = 8;
+        for (let i = 0; i < count; i++) {
+            const geo = new THREE.BoxGeometry(TILE_SIZE/4 * scale, TILE_SIZE/4 * scale, TILE_SIZE/4 * scale);
+            const mat = new THREE.MeshBasicMaterial({ color: color });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(pos);
+            const vel = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.5,
+                (Math.random() * 0.5) + 0.2,
+                (Math.random() - 0.5) * 0.5
+            );
+            scene.add(mesh);
+            particles.push({ mesh: mesh, vel: vel, life: 30 });
+        }
+    }
+
+    function respawnPlayer() {
+        if (!gameActive) return;
+        if (player) scene.remove(player.mesh);
+        
+        const startX = 9 * TILE_SIZE + TILE_SIZE/2;
+        const startZ = 24 * TILE_SIZE + TILE_SIZE/2;
+        
+        const enemyAtSpawn = enemies.findIndex(e => Math.abs(e.mesh.position.x - startX) < TILE_SIZE && Math.abs(e.mesh.position.z - startZ) < TILE_SIZE);
+        if (enemyAtSpawn !== -1) {
+            createExplosion(enemies[enemyAtSpawn].mesh.position, 0xaaaaaa);
+            scene.remove(enemies[enemyAtSpawn].mesh);
+            enemies.splice(enemyAtSpawn, 1);
+        }
+
+        player = new Tank(startX, startZ, 0xFFA500, true, 1);
+    }
+
+    function animate() {
+        if (!gameActive) return;
+        
+        frameId = requestAnimationFrame(animate);
+
+        // --- Boss 技能计时器 ---
+        if (currentLevel === 3) {
+            bossSkillTimer++;
+            if (bossSkillTimer >= BOSS_BOMBARDMENT_INTERVAL) {
+                executeBombardment();
+                bossSkillTimer = 0;
+            }
+        }
+        
+        // 更新轰炸粒子
+        for (let i = bombardmentParticles.length - 1; i >= 0; i--) {
+            if (!bombardmentParticles[i].update()) {
+                bombardmentParticles.splice(i, 1);
+            }
+        }
+        
+        if (player) player.update();
+        
+        enemies.forEach(e => e.update());
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            if (!enemies[i].alive) {
+                enemies.splice(i, 1);
+            }
+        }
+
+        // L1/L2 刷怪
+        if (currentLevel < 3) {
+            enemySpawnTimer++;
+            if (enemySpawnTimer > 150) { 
+                spawnEnemy();
+                enemySpawnTimer = 0;
+            }
+        }
+
+        bullets.forEach(b => b.update());
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            if (!bullets[i].alive) {
+                bullets.splice(i, 1);
+            }
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.life--;
+            p.mesh.position.add(p.vel); 
+            p.vel.y -= 0.02;
+            p.mesh.scale.multiplyScalar(0.9);
+            if (p.life <= 0) {
+                scene.remove(p.mesh);
+                particles.splice(i, 1);
+            }
+        }
+
+        if (player && player.alive) {
+            const targetX = player.mesh.position.x;
+            const targetZ = player.mesh.position.z + 100;
+            camera.position.x += (targetX - camera.position.x) * 0.1;
+            camera.position.z = targetZ; 
+            camera.position.y = 150;
+            camera.lookAt(camera.position.x, 0, camera.position.z - 120);
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    init();
+
+</script>
+</body>
+</html>
